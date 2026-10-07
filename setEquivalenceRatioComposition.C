@@ -33,7 +33,8 @@ Description
     The equivalence ratio and (optionally) the air composition / species molar
     masses are read from the dictionary:
 
-        constant/phiEq
+        constant/<region>/phiEq   (if -region is given and the file exists)
+        constant/phiEq            (otherwise)
 
     with the following entries:
 
@@ -53,13 +54,16 @@ Description
 
     and converted to mass fractions via the mixture molar mass.
 
-    The fields 0/CH4, 0/O2 and 0/N2 are updated:
+    The fields CH4, O2 and N2 are updated (in 0/ or in 0/<region>/):
       - internalField  -> uniform <Y>
       - inlet patch    -> fixedValue with value <Y>
 
     The inlet patch is auto-detected from a list of common names
     (inlet, in). It can be overridden with the command-line option
     -patch <name>. Use -listPatches to print all available patches.
+
+    Use -region <name> to work on a named mesh region (multi-region cases).
+    Without -region the default (single) region is used.
 
 \*---------------------------------------------------------------------------*/
 
@@ -81,7 +85,14 @@ int main(int argc, char *argv[])
     argList::addNote
     (
         "Set CH4/O2/N2 mass fractions from an equivalence ratio "
-        "(constant/phiEq)."
+        "(constant/phiEq or constant/<region>/phiEq)."
+    );
+
+    argList::addOption
+    (
+        "region",
+        "name",
+        "Mesh region name (default: single/default region)"
     );
 
     argList::addOption
@@ -100,13 +111,26 @@ int main(int argc, char *argv[])
     #include "setRootCase.H"
     #include "createTime.H"
 
+    // --- Region name (default region if -region is not given) ---
+    const word regionName
+    (
+        args.getOrDefault<word>("region", fvMesh::defaultRegion)
+    );
+
+    const bool namedRegion = (regionName != fvMesh::defaultRegion);
+
+    if (namedRegion)
+    {
+        Info<< "Using region: " << regionName << nl;
+    }
+
     // Create the mesh manually (avoid createMesh.H which pulls in
     // simplifiedMeshes and extra dependencies).
     fvMesh mesh
     (
         IOobject
         (
-            fvMesh::defaultRegion,
+            regionName,
             runTime.timeName(),
             runTime,
             IOobject::MUST_READ
@@ -116,7 +140,10 @@ int main(int argc, char *argv[])
     // --- List patches and exit if requested ---
     if (args.found("listPatches"))
     {
-        Info<< "Available patches:" << nl;
+        Info<< "Available patches";
+        if (namedRegion) Info<< " (region " << regionName << ")";
+        Info<< ":" << nl;
+
         forAll(mesh.boundaryMesh(), patchi)
         {
             Info<< "  " << mesh.boundaryMesh()[patchi].name() << nl;
@@ -150,7 +177,8 @@ int main(int argc, char *argv[])
         if (!found)
         {
             FatalErrorInFunction
-                << "Could not auto-detect an inlet patch. Available patches: "
+                << "Could not auto-detect an inlet patch in region "
+                << regionName << ". Available patches: "
                 << mesh.boundaryMesh().names() << nl
                 << "Use -patch <name> to specify one, or -listPatches to list."
                 << nl
@@ -160,11 +188,21 @@ int main(int argc, char *argv[])
         Info<< "Auto-detected inlet patch: " << patchName << nl;
     }
 
-    // --- Read constant/phiEq ---
-    const fileName phiEqFile
-    (
-        runTime.constant()/"phiEq"
-    );
+    // --- Locate phiEq dictionary ---
+    // Region case: constant/<region>/phiEq first, fall back to constant/phiEq
+    fileName phiEqFile(runTime.constant()/"phiEq");
+
+    if (namedRegion)
+    {
+        const fileName regionFile(runTime.constant()/regionName/"phiEq");
+
+        if (isFile(regionFile))
+        {
+            phiEqFile = regionFile;
+        }
+    }
+
+    Info<< "Reading " << phiEqFile << nl;
 
     IFstream is(phiEqFile);
 
@@ -212,6 +250,7 @@ int main(int argc, char *argv[])
         << ", X_O2 = " << X_O2 << ", X_N2 = " << X_N2 << nl
         << "Mass fractions:  Y_CH4 = " << Y_CH4
         << ", Y_O2 = " << Y_O2 << ", Y_N2 = " << Y_N2 << nl
+        << "Region: " << regionName << nl
         << "Inlet patch: " << patchName << nl
         << endl;
 
@@ -219,11 +258,22 @@ int main(int argc, char *argv[])
     const wordList fieldNames({"CH4", "O2", "N2"});
     const scalarList fieldValues({Y_CH4, Y_O2, Y_N2});
 
+    const label patchi = mesh.boundaryMesh().findPatchID(patchName);
+    if (patchi < 0)
+    {
+        FatalErrorInFunction
+            << "Patch " << patchName << " not found in region "
+            << regionName << ". Available patches: "
+            << mesh.boundaryMesh().names() << nl
+            << exit(FatalError);
+    }
+
     forAll(fieldNames, i)
     {
         const word& fname = fieldNames[i];
         const scalar Y = fieldValues[i];
 
+        // mesh is the registry -> path automatically includes the region
         IOobject fieldHeader
         (
             fname,
@@ -237,7 +287,7 @@ int main(int argc, char *argv[])
         {
             FatalErrorInFunction
                 << "Field " << fname << " not found in "
-                << runTime.timeName() << nl
+                << fieldHeader.objectPath() << nl
                 << exit(FatalError);
         }
 
@@ -247,15 +297,6 @@ int main(int argc, char *argv[])
         field.primitiveFieldRef() = Y;
 
         // Set inlet patch
-        const label patchi = mesh.boundaryMesh().findPatchID(patchName);
-        if (patchi < 0)
-        {
-            FatalErrorInFunction
-                << "Patch " << patchName << " not found. Available patches: "
-                << mesh.boundaryMesh().names() << nl
-                << exit(FatalError);
-        }
-
         fvPatchScalarField& pf = field.boundaryFieldRef()[patchi];
         pf == Y;
 
@@ -270,8 +311,8 @@ int main(int argc, char *argv[])
 
         field.write();
 
-        Info<< "Updated " << fname << ": internalField = " << Y
-            << ", patch " << patchName << " = " << Y << nl;
+        Info<< "Updated " << fieldHeader.objectPath() << ": internalField = "
+            << Y << ", patch " << patchName << " = " << Y << nl;
     }
 
     Info<< nl << "Done." << nl << endl;
