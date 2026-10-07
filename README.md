@@ -74,6 +74,16 @@ setEquivalenceRatioComposition -listPatches
 
 # specify the inlet patch explicitly
 setEquivalenceRatioComposition -patch inlet
+
+# multi-region case: work on the region named "gas"
+# (fields are read from / written to 0/gas/, mesh from constant/gas/polyMesh)
+setEquivalenceRatioComposition -region gas
+
+# multi-region case: list patches of the region "gas"
+setEquivalenceRatioComposition -region gas -listPatches
+
+# multi-region case: specify the inlet patch explicitly
+setEquivalenceRatioComposition -region gas -patch gas_inlet
 ```
 
 The utility reads `constant/phiEq` and updates `0/CH4`, `0/O2`, `0/N2`.
