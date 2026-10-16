@@ -114,7 +114,7 @@ int main(int argc, char *argv[])
     // --- Region name (default region if -region is not given) ---
     const word regionName
     (
-        args.getOrDefault<word>("region", fvMesh::defaultRegion)
+        args.optionLookupOrDefault<word>("region", fvMesh::defaultRegion)
     );
 
     const bool namedRegion = (regionName != fvMesh::defaultRegion);
@@ -131,22 +131,22 @@ int main(int argc, char *argv[])
         IOobject
         (
             regionName,
-            runTime.timeName(),
+            runTime.name(),
             runTime,
             IOobject::MUST_READ
         )
     );
 
     // --- List patches and exit if requested ---
-    if (args.found("listPatches"))
+    if (args.optionFound("listPatches"))
     {
         Info<< "Available patches";
         if (namedRegion) Info<< " (region " << regionName << ")";
         Info<< ":" << nl;
 
-        forAll(mesh.boundaryMesh(), patchi)
+        forAll(mesh.poly().boundary(), patchi)
         {
-            Info<< "  " << mesh.boundaryMesh()[patchi].name() << nl;
+            Info<< "  " << mesh.poly().boundary()[patchi].name() << nl;
         }
         Info<< endl;
         return 0;
@@ -155,9 +155,9 @@ int main(int argc, char *argv[])
     // --- Determine inlet patch name ---
     word patchName;
 
-    if (args.found("patch"))
+    if (args.optionFound("patch"))
     {
-        patchName = args.get<word>("patch");
+        patchName = args.optionRead<word>("patch");
     }
     else
     {
@@ -166,7 +166,7 @@ int main(int argc, char *argv[])
         bool found = false;
         for (const word& cand : candidates)
         {
-            if (mesh.boundaryMesh().findPatchID(cand) >= 0)
+            if (mesh.poly().boundary().findIndex(cand) >= 0)
             {
                 patchName = cand;
                 found = true;
@@ -179,7 +179,7 @@ int main(int argc, char *argv[])
             FatalErrorInFunction
                 << "Could not auto-detect an inlet patch in region "
                 << regionName << ". Available patches: "
-                << mesh.boundaryMesh().names() << nl
+                << mesh.poly().boundary().names() << nl
                 << "Use -patch <name> to specify one, or -listPatches to list."
                 << nl
                 << exit(FatalError);
@@ -216,18 +216,18 @@ int main(int argc, char *argv[])
 
     const dictionary phiDict(is);
 
-    const scalar phi = phiDict.get<scalar>("value");
+    const scalar phi = phiDict.lookup<scalar>("value");
 
     const scalar k_O_air =
-        phiDict.getOrDefault<scalar>("kO2Air", 0.20946);
+        phiDict.lookupOrDefault<scalar>("kO2Air", 0.20946);
     const scalar K_fuel_oxidizer =
-        phiDict.getOrDefault<scalar>("KfuelOxidizer", 0.5);
+        phiDict.lookupOrDefault<scalar>("KfuelOxidizer", 0.5);
     const scalar Mass_CH4 =
-        phiDict.getOrDefault<scalar>("MassCH4", 12.011 + 1.0080*4);
+        phiDict.lookupOrDefault<scalar>("MassCH4", 12.011 + 1.0080*4);
     const scalar Mass_O2 =
-        phiDict.getOrDefault<scalar>("MassO2", 15.999*2);
+        phiDict.lookupOrDefault<scalar>("MassO2", 15.999*2);
     const scalar Mass_N2 =
-        phiDict.getOrDefault<scalar>("MassN2", 14.007*2);
+        phiDict.lookupOrDefault<scalar>("MassN2", 14.007*2);
 
     // --- Mole fractions ---
     const scalar X_CH4 =
@@ -258,13 +258,13 @@ int main(int argc, char *argv[])
     const wordList fieldNames({"CH4", "O2", "N2"});
     const scalarList fieldValues({Y_CH4, Y_O2, Y_N2});
 
-    const label patchi = mesh.boundaryMesh().findPatchID(patchName);
+    const label patchi = mesh.poly().boundary().findIndex(patchName);
     if (patchi < 0)
     {
         FatalErrorInFunction
             << "Patch " << patchName << " not found in region "
             << regionName << ". Available patches: "
-            << mesh.boundaryMesh().names() << nl
+            << mesh.poly().boundary().names() << nl
             << exit(FatalError);
     }
 
@@ -277,17 +277,17 @@ int main(int argc, char *argv[])
         IOobject fieldHeader
         (
             fname,
-            runTime.timeName(),
+            runTime.name(),
             mesh,
             IOobject::MUST_READ,
             IOobject::AUTO_WRITE
         );
 
-        if (!fieldHeader.typeHeaderOk<volScalarField>(true))
+        if (!fieldHeader.headerOk())
         {
             FatalErrorInFunction
                 << "Field " << fname << " not found in "
-                << fieldHeader.objectPath() << nl
+                << runTime.name() << "/" << fname << nl
                 << exit(FatalError);
         }
 
@@ -311,7 +311,7 @@ int main(int argc, char *argv[])
 
         field.write();
 
-        Info<< "Updated " << fieldHeader.objectPath() << ": internalField = "
+        Info<< "Updated " << runTime.name() << "/" << fname << ": internalField = "
             << Y << ", patch " << patchName << " = " << Y << nl;
     }
 

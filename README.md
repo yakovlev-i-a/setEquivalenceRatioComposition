@@ -49,12 +49,19 @@ it keeps the case files readable by anyone.
 
 4. Writes the result into `0/CH4`, `0/O2`, `0/N2`:
    - `internalField` → `uniform <Y_i>`
-   - inlet patch (default `left`) → `fixedValue` with value `<Y_i>`
+   - detected inlet patch (default `inlet` / `in`) → `fixedValue` with value `<Y_i>`
 
 ## Building
 
+Works with recent versions of both OpenFOAM distributions:
+
+- [openfoam.org](https://openfoam.org) — OpenFOAM 14 and later
+- [openfoam.com](https://openfoam.com) — recent OpenFOAM dev
+
+Source the environment of your installation, then build:
+
 ```bash
-source /usr/lib/openfoam/openfoam2606/etc/bashrc
+source $FOAM_INST_DIR/etc/bashrc   # org: /opt/openfoam14/etc/bashrc, com: $HOME/OpenFOAM/OpenFOAM-dev/etc/bashrc
 cd setEquivalenceRatioComposition
 wmake
 ```
